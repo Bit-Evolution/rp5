@@ -1,20 +1,13 @@
 #!/bin/bash
 
-# Dieses Skript ist der dritte Teil. Es richtet eine Firewall ein, falls du 
-# Raspberry Pi OS mit Desktop verwendest, um deinen Server zu schützen.
+# Dieses Skript richtet eine Firewall ein, falls du eine Firewall konfiguriert hast.
+
+set -e
 
 # Farben für die Ausgabe
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 NC='\033[0m'
-
-# Funktion zur Überprüfung des letzten Befehls
-check_success() {
-    if [ $? -ne 0 ]; then
-        echo -e "${RED}Etwas ist schiefgelaufen. Das Skript wird abgebrochen.${NC}"
-        exit 1
-    fi
-}
 
 # Lade die Einstellungen aus Teil 1
 if [ ! -f ~/config.sh ]; then
@@ -23,30 +16,32 @@ if [ ! -f ~/config.sh ]; then
 fi
 source ~/config.sh
 
-# Richte die Firewall ein, falls Desktop verwendet wird
-if [ "$USE_DESKTOP" == "j" ]; then
-    echo -e "${GREEN}Richte die Firewall für den Desktop ein...${NC}"
+# Richte die Firewall ein, falls gewünscht
+if [ "$CONFIG_FIREWALL" == "j" ]; then
+    echo -e "${GREEN}Richte die Firewall ein...${NC}"
+    # Prüfe, ob UFW bereits aktiv ist
+    if sudo ufw status | grep -q "Status: active"; then
+        echo -e "${RED}Warnung: Die Firewall ist bereits aktiv. Bitte überprüfe die bestehenden Regeln, um Konflikte zu vermeiden.${NC}"
+    fi
     cat << 'EOF' > ~/secure_desktop.sh
 #!/bin/bash
 # Firewall aktivieren und Standardregeln setzen
-sudo ufw default deny incoming  # Alles blockieren, was reinkommt
-sudo ufw default allow outgoing  # Alles erlauben, was rausgeht
-
-# Öffne nur die benötigten Ports
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+# Öffne benötigte Ports
 sudo ufw allow 80/tcp    # HTTP für NGINX Proxy Manager
 sudo ufw allow 443/tcp   # HTTPS für NGINX Proxy Manager
-
+sudo ufw allow 22/tcp    # SSH für Fernzugriff
 # Starte die Firewall
 sudo ufw enable
 echo -e "${GREEN}Die Firewall ist jetzt aktiv. Starte dein System neu!${NC}"
 EOF
     chmod +x ~/secure_desktop.sh
-    bash ~/secure_desktop.sh
-    check_success
+    sudo bash ~/secure_desktop.sh
 else
-    echo -e "${GREEN}Du brauchst keine Firewall, weil du keinen Desktop verwendest.${NC}"
+    echo -e "${GREEN}Du hast keine Firewall-Konfiguration gewählt.${NC}"
 fi
 
 # Abschluss
 echo -e "${GREEN}Teil 3 ist fertig!${NC}"
-echo -e "${GREEN}Starte dein System bitte neu, damit die Firewall aktiv wird.${NC}"
+echo -e "${GREEN}Starte dein System bitte neu, wenn du eine Firewall konfiguriert hast.${NC}"
