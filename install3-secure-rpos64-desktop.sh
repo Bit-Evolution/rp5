@@ -1,56 +1,52 @@
 #!/bin/bash
 
-# Farben für die Ausgabe definieren
+# Dieses Skript ist der dritte Teil. Es richtet eine Firewall ein, falls du 
+# Raspberry Pi OS mit Desktop verwendest, um deinen Server zu schützen.
+
+# Farben für die Ausgabe
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-# Funktion zum Überprüfen des letzten Befehls
+# Prüfe, ob der letzte Befehl funktioniert hat
 check_success() {
     if [ $? -ne 0 ]; then
-        echo -e "${RED}Fehler bei der Ausführung des letzten Befehls. Skript wird abgebrochen.${NC}"
+        echo -e "${RED}Etwas ist schiefgelaufen. Das Skript wird abgebrochen.${NC}"
         exit 1
     fi
 }
 
-# Lade Konfigurationsvariablen
+# Lade die Einstellungen aus Teil 1
 if [ ! -f ~/config.sh ]; then
-    echo -e "${RED}Konfigurationsdatei ~/config.sh nicht gefunden. Bitte führe zuerst 'install_part1.sh' aus.${NC}"
+    echo -e "${RED}Ich finde die Einstellungen nicht. Führe zuerst 'install_part1.sh' aus!${NC}"
     exit 1
 fi
 source ~/config.sh
 
-# Überprüfe, ob Desktop-Sicherheit konfiguriert werden soll
-if [ "$USE_DESKTOP" == "y" ]; then
-    echo -e "${GREEN}Richte Desktop-Sicherheit ein...${NC}"
+# Richte die Firewall ein, falls du den Desktop verwendest
+if [ "$USE_DESKTOP" == "j" ]; then
+    echo -e "${GREEN}Richte die Firewall für den Desktop ein...${NC}"
     cat << 'EOF' > ~/secure_desktop.sh
 #!/bin/bash
-# UFW aktivieren und Standardregeln setzen
-sudo ufw default deny incoming
-sudo ufw default allow outgoing
+# Firewall aktivieren und Standardregeln setzen
+sudo ufw default deny incoming  # Alles blockieren, was reinkommt
+sudo ufw default allow outgoing  # Alles erlauben, was rausgeht
 
-# Ports für Dienste freigeben
-sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
-sudo ufw allow 81/tcp
-sudo ufw allow 3000/tcp
-sudo ufw allow 8081/tcp
-sudo ufw allow 8443/tcp
-sudo ufw allow 4443/tcp
-sudo ufw allow 8082/tcp
-sudo ufw allow 9001/tcp
+# Öffne nur die wirklich benötigten Ports für den externen Zugriff
+sudo ufw allow 80/tcp    # HTTP für NGINX Proxy Manager
+sudo ufw allow 443/tcp   # HTTPS für NGINX Proxy Manager
 
-# UFW aktivieren
+# Starte die Firewall
 sudo ufw enable
-echo -e "${GREEN}Firewall wurde konfiguriert. Bitte starte den Raspberry Pi neu, um die Änderungen zu übernehmen.${NC}"
+echo -e "${GREEN}Die Firewall ist jetzt aktiv. Starte dein System neu!${NC}"
 EOF
     chmod +x ~/secure_desktop.sh
     bash ~/secure_desktop.sh
     check_success
 else
-    echo -e "${GREEN}Desktop-Sicherheit nicht erforderlich.${NC}"
+    echo -e "${GREEN}Du brauchst keine Firewall, weil du keinen Desktop verwendest.${NC}"
 fi
 
-# Abschlussmeldung
-echo -e "${GREEN}Teil 3 der Installation abgeschlossen!${NC}"
-echo -e "${GREEN}Bitte starte das System neu, um die Firewall-Änderungen zu übernehmen.${NC}"
+# Fertig mit Teil 3
+echo -e "${GREEN}Teil 3 ist fertig!${NC}"
+echo -e "${GREEN}Starte dein System bitte neu, damit die Firewall aktiv wird.${NC}"
