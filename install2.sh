@@ -1,65 +1,47 @@
 #!/bin/bash
 
-# Farben für die Ausgabe definieren
+# Dieses Skript ist der zweite Teil. Es installiert die Server, die du ausgewählt hast:
+# Nextcloud, Vaultwarden, NGINX Proxy Manager und Etherpad.
+
+# Farben für die Ausgabe
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-# Funktion zum Überprüfen des letzten Befehls
+# Prüfe, ob der letzte Befehl funktioniert hat
 check_success() {
     if [ $? -ne 0 ]; then
-        echo -e "${RED}Fehler bei der Ausführung des letzten Befehls. Skript wird abgebrochen.${NC}"
+        echo -e "${RED}Etwas ist schiefgelaufen. Das Skript wird abgebrochen.${NC}"
         exit 1
     fi
 }
 
-# Lade Konfigurationsvariablen
+# Lade die Einstellungen aus Teil 1
 if [ ! -f ~/config.sh ]; then
-    echo -e "${RED}Konfigurationsdatei ~/config.sh nicht gefunden. Bitte führe zuerst 'install_part1.sh' aus.${NC}"
+    echo -e "${RED}Ich finde die Einstellungen nicht. Führe zuerst 'install_part1.sh' aus!${NC}"
     exit 1
 fi
 source ~/config.sh
 
-# Überprüfe, ob die statische IP gesetzt ist
-if [ "$SET_NETWORK_MANUALLY" == "y" ]; then
-    LOCAL_IP=$STATIC_IP
-else
-    LOCAL_IP=$(ip -4 addr show eth0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n 1)
-fi
+# Deine lokale IP-Adresse (nur zur Info)
+LOCAL_IP=$(ip -4 addr show eth0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n 1)
+echo -e "${GREEN}Nur so nebenbei: Deine lokale IP-Adresse ist $LOCAL_IP${NC}"
 
-# Statische IP konfigurieren (falls gewünscht)
-if [ "$SET_NETWORK_MANUALLY" == "y" ]; then
-    echo -e "${GREEN}Erstelle Skript für statische IP...${NC}"
-    cat << EOF > ~/set_static_ip.sh
-#!/bin/bash
-echo "interface eth0
-static ip_address=${STATIC_IP}/24
-static routers=${GATEWAY}
-static domain_name_servers=${DNS_SERVERS}" | sudo tee /etc/dhcpcd.conf > /dev/null
-sudo systemctl restart dhcpcd
-EOF
-    chmod +x ~/set_static_ip.sh
-    echo "@reboot $USER ~/set_static_ip.sh" | sudo tee /etc/cron.d/set_static_ip
-    check_success
-    # Sofort anwenden
-    sudo bash ~/set_static_ip.sh
-    check_success
-fi
-
-# Bluetooth und WiFi optional deaktivieren
-if [ "$DISABLE_BT" == "y" ]; then
-    echo -e "${GREEN}Deaktiviere Bluetooth...${NC}"
+# Schalte Bluetooth aus, falls gewünscht
+if [ "$DISABLE_BT" == "j" ]; then
+    echo -e "${GREEN}Schalte Bluetooth aus...${NC}"
     echo "dtoverlay=disable-bt" | sudo tee -a /boot/config.txt
     check_success
 fi
 
-if [ "$DISABLE_WIFI" == "y" ]; then
-    echo -e "${GREEN}Deaktiviere WiFi...${NC}"
+# Schalte WiFi aus, falls gewünscht
+if [ "$DISABLE_WIFI" == "j" ]; then
+    echo -e "${GREEN}Schalte WiFi aus...${NC}"
     echo "dtoverlay=disable-wifi" | sudo tee -a /boot/config.txt
     check_success
 fi
 
-# DynDNS-Client einrichten
+# Richte DynDNS ein (damit deine Domain immer auf deine IP zeigt)
 echo -e "${GREEN}Richte DynDNS ein...${NC}"
 sg docker -c "docker run -d \
   --name dyndns \
@@ -70,7 +52,7 @@ sg docker -c "docker run -d \
   oznu/cloudflare-dns"
 check_success
 
-# NGINX Proxy Manager installieren
+# Installiere NGINX Proxy Manager (leitet Anfragen an die richtigen Server weiter)
 echo -e "${GREEN}Installiere NGINX Proxy Manager...${NC}"
 sg docker -c "docker run -d \
   --name nginx-proxy-manager \
@@ -84,48 +66,36 @@ sg docker -c "docker run -d \
   jc21/nginx-proxy-manager"
 check_success
 
-# Benutzer auffordern, NGINX Proxy Manager zu konfigurieren
-echo -e "${GREEN}NGINX Proxy Manager wurde gestartet. Bitte öffne http://$LOCAL_IP:81 im Browser und konfiguriere die Proxy Hosts für alle Dienste.${NC}"
-echo "Standard-Login: admin@example.com / changeme"
-read -p "Drücke Enter, wenn du NGINX Proxy Manager konfiguriert hast..."
+# Bitte den Benutzer, den Proxy einzurichten
+echo -e "${GREEN}NGINX Proxy Manager läuft jetzt. Öffne http://$LOCAL_IP:81 in deinem Browser.${NC}"
+echo "Logge dich ein mit: admin@example.com / changeme"
+echo "Richte dort die Weiterleitungen für Nextcloud, Vaultwarden und Etherpad ein."
+read -p "Drücke Enter, wenn du fertig bist..."
 
-# CapRover installieren
-echo -e "${GREEN}Installiere CapRover...${NC}"
+# Installiere Nextcloud (eine Cloud zum Speichern von Dateien)
+echo -e "${GREEN}Installiere Nextcloud...${NC}"
 sg docker -c "docker run -d \
-  --name caprover \
+  --name nextcloud \
   --network proxy_net \
-  -p 3000:3000 \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v ~/docker/caprover:/captain/data \
+  -p 8080:80 \
+  -v ~/docker/nextcloud:/var/www/html \
+  -v $MOUNT_DIR:/var/www/html/data \
   --restart=unless-stopped \
-  caprover/caprover"
+  nextcloud"
 check_success
 
-# NextcloudPi installieren
-echo -e "${GREEN}Installiere NextcloudPi...${NC}"
-sg docker -c "docker run -d \
-  --name nextcloudpi \
-  --network proxy_net \
-  -p 8081:80 \
-  -p 8443:443 \
-  -p 4443:4443 \
-  -v ~/docker/nextcloud:/data \
-  --restart=unless-stopped \
-  ownyourbits/nextcloudpi"
-check_success
-
-# Vaultwarden installieren
+# Installiere Vaultwarden (ein Passwort-Manager)
 echo -e "${GREEN}Installiere Vaultwarden...${NC}"
 sg docker -c "docker run -d \
   --name vaultwarden \
   --network proxy_net \
   -p 8082:80 \
-  -v ~/docker/bitwarden:/data \
+  -v ~/docker/vaultwarden:/data \
   --restart=unless-stopped \
   vaultwarden/server"
 check_success
 
-# Etherpad installieren
+# Installiere Etherpad (zum gemeinsamen Schreiben von Texten)
 echo -e "${GREEN}Installiere Etherpad...${NC}"
 sg docker -c "docker run -d \
   --name etherpad \
@@ -136,7 +106,10 @@ sg docker -c "docker run -d \
   etherpad/etherpad"
 check_success
 
-# Abschlussmeldung
-echo -e "${GREEN}Teil 2 der Installation abgeschlossen!${NC}"
-echo -e "${GREEN}Bitte starte das System neu, um die Änderungen zu übernehmen.${NC}"
-echo -e "${GREEN}Führe nach dem Neustart 'install_part3.sh' aus, falls du Raspberry Pi OS Desktop verwendest.${NC}"
+# Hinweis zu Floccus (leider kein Docker-Image verfügbar)
+echo -e "${GREEN}Hinweis: Für Floccus gibt es kein offizielles Docker-Image, daher wird es nicht installiert.${NC}"
+
+# Fertig mit Teil 2
+echo -e "${GREEN}Teil 2 ist fertig!${NC}"
+echo -e "${GREEN}Starte dein System bitte neu, damit alles richtig läuft.${NC}"
+echo -e "${GREEN}Führe danach 'install_part3.sh' aus, wenn du den Desktop verwendest.${NC}"
